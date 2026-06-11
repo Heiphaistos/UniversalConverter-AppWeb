@@ -1,0 +1,22 @@
+# Build
+server/target/
+web/dist/
+web/node_modules/
+
+# Modèle (44 MB — téléchargé au déploiement)
+model.onnx
+*.onnx
+
+# Logs
+.logs/
+
+# Secrets
+.env
+.env.*
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini

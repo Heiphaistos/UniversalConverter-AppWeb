@@ -1,0 +1,54 @@
+[package]
+name = "universalconverter-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+axum           = { version = "0.8", features = ["multipart"] }
+tokio          = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tower-http     = { version = "0.6", features = ["fs", "limit", "trace", "timeout"] }
+tower_governor = "0.7"
+tracing            = "0.1"
+tracing-subscriber = "0.3"
+
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow     = "1"
+base64     = "0.22"
+
+# Images raster (mêmes versions que UniversalConverter desktop — code audité v1.7.0)
+image = { version = "0.25", features = [
+    "png", "jpeg", "webp", "bmp", "gif", "tiff", "ico", "tga",
+    "pnm", "hdr", "avif"
+] }
+
+# PDF
+lopdf    = "0.33"
+printpdf = "0.7"
+
+# SVG → raster (pure Rust)
+resvg = "0.44"
+
+# Markdown → HTML / TXT
+pulldown-cmark = "0.11"
+
+# Office : lecture ZIP (DOCX, PPTX, XLSX sont des archives ZIP)
+zip = "2"
+
+# Office : parsing XML interne (DOCX, PPTX)
+quick-xml = "0.36"
+
+# Office : lecture Excel (XLS, XLSX, ODS)
+calamine = "0.26"
+
+# Office : écriture XLSX
+rust_xlsxwriter = "0.93"
+
+# CSV
+csv = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+strip         = true
