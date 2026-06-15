@@ -1,8 +1,7 @@
 # UniversalConverter Web
 ## Démonstration
 
-<video controls width="100%" preload="none">
-  <source src="https://media.heiphaistos.org/videos/universalconverter.mp4" type="video/mp4">\n</video>\n
+<video src="https://media.heiphaistos.org/videos/universalconverter.mp4" controls width="100%" preload="none"></video>\n
 Version web de UniversalConverter — conversion de fichiers en ligne (images, PDF, Word, Excel, PowerPoint, CSV, JSON), hébergée sur VPS.
 
 **Prod : https://universalconverter.heiphaistos.org**
