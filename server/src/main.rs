@@ -59,7 +59,7 @@ impl KeyExtractor for ClientIpExtractor {
         };
 
         header_ip("cf-connecting-ip")
-            .or_else(|| header_ip("x-forwarded-for"))
+            .or_else(|| header_ip("x-real-ip"))
             .or_else(|| {
                 req.extensions()
                     .get::<axum::extract::ConnectInfo<SocketAddr>>()
@@ -177,10 +177,12 @@ fn file_response(fmt: &str, output_name: &str, bytes: Vec<u8>) -> Response {
         .chars()
         .map(|c| if c.is_ascii_graphic() && c != '"' { c } else { '_' })
         .collect();
+    let content_disposition = format!("attachment; filename=\"{}\"", safe_name);
     (
         [
             (header::CONTENT_TYPE.clone(), mime_for(fmt).to_string()),
             (header::CACHE_CONTROL.clone(), "no-store".to_string()),
+            (header::CONTENT_DISPOSITION.clone(), content_disposition),
             (X_OUTPUT_NAME.clone(), safe_name),
         ],
         bytes,
@@ -338,6 +340,17 @@ async fn split_pdf(
 async fn pdf_page_count(multipart: Multipart) -> Result<Response, ApiError> {
     let req = parse_multipart(multipart).await?;
     let file = req.files.into_iter().next().ok_or_else(|| bad_request("Champ 'file' manquant"))?;
+
+    // Limite spécifique à cet endpoint : 10 MB
+    const MAX_PDF_COUNT_BYTES: usize = 10 * 1024 * 1024;
+    if file.bytes.len() > MAX_PDF_COUNT_BYTES {
+        return Err(bad_request("Fichier trop volumineux pour ce endpoint (max 10 MB)"));
+    }
+
+    // Validation magic bytes PDF (%PDF)
+    if !file.bytes.starts_with(b"%PDF") {
+        return Err(bad_request("Fichier invalide : signature PDF (%PDF) introuvable"));
+    }
 
     let count = tokio::task::spawn_blocking(move || dispatch::pdf_page_count_bytes(&file.bytes))
         .await

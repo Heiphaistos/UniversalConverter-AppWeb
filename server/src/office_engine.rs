@@ -102,16 +102,28 @@ fn read_excel_all_sheets(
 ) -> Result<Vec<(String, Vec<Vec<String>>)>> {
     use calamine::{open_workbook_auto, Reader};
 
+    const MAX_TOTAL_CELLS: usize = 500_000;
+
     let mut workbook = open_workbook_auto(input_path)
         .map_err(|e| anyhow!("Impossible d'ouvrir '{}': {}", input_path, e))?;
 
     let sheet_names = workbook.sheet_names().to_vec();
     let mut sheets = Vec::new();
+    let mut total_cells: usize = 0;
 
     for name in &sheet_names {
         let range = workbook
             .worksheet_range(name)
             .map_err(|e| anyhow!("Feuille '{}': {}", name, e))?;
+
+        let sheet_cells = range.rows().map(|r| r.len()).sum::<usize>();
+        total_cells = total_cells.saturating_add(sheet_cells);
+        if total_cells > MAX_TOTAL_CELLS {
+            return Err(anyhow!(
+                "Fichier Excel trop volumineux : {} cellules dépassent la limite de {} (anti-amplification JSON)",
+                total_cells, MAX_TOTAL_CELLS
+            ));
+        }
 
         let rows: Vec<Vec<String>> = range
             .rows()

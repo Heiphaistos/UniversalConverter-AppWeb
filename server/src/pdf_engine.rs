@@ -260,10 +260,15 @@ pub fn merge_pdfs_pages(input_paths: &[String], output_path: &str) -> Result<()>
         // Renumber + ajouter tous les objets sources dans result
         // Sûr : id.0 <= src_max_id et offset + src_max_id <= u32::MAX (vérifié ci-dessus)
         for (id, obj) in src.objects {
-            result.objects.insert((id.0 + offset, id.1), renumber_refs(obj, offset));
+            let new_id = id.0.checked_add(offset)
+                .ok_or_else(|| anyhow!("Overflow object id lors du renumbering PDF"))?;
+            result.objects.insert((new_id, id.1), renumber_refs(obj, offset));
         }
 
-        let new_page_ids: Vec<_> = src_page_ids.iter().map(|id| (id.0 + offset, id.1)).collect();
+        let new_page_ids: Vec<_> = src_page_ids.iter()
+            .map(|id| id.0.checked_add(offset).map(|new_id| (new_id, id.1)))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow!("Overflow page id lors du renumbering PDF"))?;
 
         // Mettre à jour Parent de chaque page ajoutée
         for &page_id in &new_page_ids {

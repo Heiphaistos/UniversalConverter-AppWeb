@@ -192,6 +192,18 @@ pub fn convert_bytes(input: &[u8], ext: &str, fmt: &str, opts: &ConvertOptions) 
         _ => return Err(anyhow!("Conversion .{ext} → {fmt} non supportée")),
     }
 
+    // Anti-amplification : refuse les sorties dépassant 50 MB
+    const MAX_OUTPUT_BYTES: u64 = 50 * 1024 * 1024;
+    let output_size = std::fs::metadata(&dst.0)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if output_size > MAX_OUTPUT_BYTES {
+        return Err(anyhow!(
+            "Sortie trop volumineuse ({} MB > 50 MB) — conversion refusée",
+            output_size / 1_048_576
+        ));
+    }
+
     dst.read()
 }
 
