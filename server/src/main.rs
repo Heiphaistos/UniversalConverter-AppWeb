@@ -195,7 +195,8 @@ fn file_response(fmt: &str, output_name: &str, bytes: Vec<u8>) -> Response {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async fn health() -> impl IntoResponse {
-    Json(serde_json::json!({ "status": "ok", "version": VERSION }))
+    // Version non exposée en production (anti-fingerprinting)
+    Json(serde_json::json!({ "status": "ok" }))
 }
 
 /// POST /api/convert — multipart : file + output_format [+ quality, resize_width,
@@ -370,9 +371,15 @@ async fn pdf_page_count(multipart: Multipart) -> Result<Response, ApiError> {
 /// d'erreur avant de les renvoyer au client. Les chemins comme `/tmp/ucw_*.xxx`
 /// ou `C:\Users\...\AppData\Local\Temp\ucw_*` ne doivent pas fuiter.
 fn sanitize_error_message(msg: &str) -> String {
-    // Supprimer les chemins absolus (Windows et POSIX)
-    let re_win = regex::Regex::new(r#"(?i)[A-Za-z]:[\\\/][^\s,:'"]+"#).unwrap();
-    let re_posix = regex::Regex::new(r#"/(?:tmp|var|home|usr|opt)/[^\s,:'"]+"#).unwrap();
+    use std::sync::OnceLock;
+    static RE_WIN: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_POSIX: OnceLock<regex::Regex> = OnceLock::new();
+    let re_win = RE_WIN.get_or_init(|| {
+        regex::Regex::new(r"(?i)[A-Za-z]:[\\\/][^\s,:'\"]+").expect("regex win valide")
+    });
+    let re_posix = RE_POSIX.get_or_init(|| {
+        regex::Regex::new(r"/(?:tmp|var|home|usr|opt)/[^\s,:'\"]+").expect("regex posix valide")
+    });
     let cleaned = re_win.replace_all(msg, "<path>");
     let cleaned = re_posix.replace_all(&cleaned, "<path>");
     cleaned.into_owned()
