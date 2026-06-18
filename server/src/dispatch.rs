@@ -16,26 +16,17 @@ use crate::text_engine::{
     create_pdf_from_text, html_to_pdf, html_to_txt, md_to_html, md_to_pdf, md_to_txt, txt_to_pdf,
 };
 use anyhow::{anyhow, Result};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 // ─── Fichiers temporaires (RAII) ──────────────────────────────────────────────
-
-static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct TempFile(String);
 
 impl TempFile {
-    /// Crée un chemin temp unique (timestamp + compteur atomique — pas de collision
-    /// même avec plusieurs requêtes simultanées).
+    /// Crée un chemin temp unique via UUID v4 — pas de collision en concurrence.
     fn path(ext: &str) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id = uuid::Uuid::new_v4().simple().to_string();
         let p = std::env::temp_dir()
-            .join(format!("ucw_{ts}_{n}.{ext}"))
+            .join(format!("ucw_{id}.{ext}"))
             .to_string_lossy()
             .to_string();
         TempFile(p)
