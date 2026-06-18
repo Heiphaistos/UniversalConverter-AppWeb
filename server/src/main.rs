@@ -375,10 +375,10 @@ fn sanitize_error_message(msg: &str) -> String {
     static RE_WIN: OnceLock<regex::Regex> = OnceLock::new();
     static RE_POSIX: OnceLock<regex::Regex> = OnceLock::new();
     let re_win = RE_WIN.get_or_init(|| {
-        regex::Regex::new(r"(?i)[A-Za-z]:[\\\/][^\s,:'\"]+").expect("regex win valide")
+        regex::Regex::new(r#"(?i)[A-Za-z]:[\\\/][^\s,:'"]+"#).expect("regex win valide")
     });
     let re_posix = RE_POSIX.get_or_init(|| {
-        regex::Regex::new(r"/(?:tmp|var|home|usr|opt)/[^\s,:'\"]+").expect("regex posix valide")
+        regex::Regex::new(r#"/(?:tmp|var|home|usr|opt)/[^\s,:'"]+"#).expect("regex posix valide")
     });
     let cleaned = re_win.replace_all(msg, "<path>");
     let cleaned = re_posix.replace_all(&cleaned, "<path>");
