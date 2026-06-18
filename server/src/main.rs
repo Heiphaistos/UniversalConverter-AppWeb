@@ -10,7 +10,7 @@ mod text_engine;
 use anyhow::anyhow;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, State},
-    http::{header, HeaderName, Request, StatusCode},
+    http::{header, HeaderName, HeaderValue, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -25,7 +25,9 @@ use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::KeyExtractor, GovernorError, GovernorLayer,
 };
 use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
     services::{ServeDir, ServeFile},
+    set_response_header::SetResponseHeaderLayer,
     timeout::TimeoutLayer,
 };
 
@@ -253,7 +255,9 @@ async fn convert(
     .map_err(|e| internal(format!("Tâche interrompue : {e}")))?
     .map_err(|e| {
         tracing::error!("Conversion échouée : {e}");
-        bad_request(format!("{e}"))
+        // Filtre les chemins de fichiers temporaires des messages d'erreur exposés
+        let msg = sanitize_error_message(&e.to_string());
+        bad_request(msg)
     })?;
 
     Ok(file_response(&fmt, &output_name, bytes))
@@ -287,7 +291,7 @@ async fn merge_pdf(
         .map_err(|e| internal(format!("Tâche interrompue : {e}")))?
         .map_err(|e| {
             tracing::error!("Fusion PDF échouée : {e}");
-            bad_request(format!("{e}"))
+            bad_request(sanitize_error_message(&e.to_string()))
         })?;
 
     Ok(file_response("pdf", "merged.pdf", bytes))
@@ -330,7 +334,7 @@ async fn split_pdf(
         .map_err(|e| internal(format!("Tâche interrompue : {e}")))?
         .map_err(|e| {
             tracing::error!("Split PDF échoué : {e}");
-            bad_request(format!("{e}"))
+            bad_request(sanitize_error_message(&e.to_string()))
         })?;
 
     Ok(file_response("pdf", &format!("{stem}_pages.pdf"), bytes))
@@ -355,9 +359,23 @@ async fn pdf_page_count(multipart: Multipart) -> Result<Response, ApiError> {
     let count = tokio::task::spawn_blocking(move || dispatch::pdf_page_count_bytes(&file.bytes))
         .await
         .map_err(|e| internal(format!("Tâche interrompue : {e}")))?
-        .map_err(|e| bad_request(format!("{e}")))?;
+        .map_err(|e| bad_request(sanitize_error_message(&e.to_string())))?;
 
     Ok(Json(serde_json::json!({ "pages": count })).into_response())
+}
+
+// ─── Filtrage des messages d'erreur exposés au client ────────────────────────
+
+/// Supprime les chemins de fichiers temporaires et détails système des messages
+/// d'erreur avant de les renvoyer au client. Les chemins comme `/tmp/ucw_*.xxx`
+/// ou `C:\Users\...\AppData\Local\Temp\ucw_*` ne doivent pas fuiter.
+fn sanitize_error_message(msg: &str) -> String {
+    // Supprimer les chemins absolus (Windows et POSIX)
+    let re_win = regex::Regex::new(r"(?i)[A-Za-z]:[\\\/][^\s,:'\"]+").unwrap();
+    let re_posix = regex::Regex::new(r"/(?:tmp|var|home|usr|opt)/[^\s,:'\"]+").unwrap();
+    let cleaned = re_win.replace_all(msg, "<path>");
+    let cleaned = re_posix.replace_all(&cleaned, "<path>");
+    cleaned.into_owned()
 }
 
 // ─── main ─────────────────────────────────────────────────────────────────────
@@ -370,6 +388,8 @@ async fn main() -> anyhow::Result<()> {
 
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3003);
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "../web/dist".into());
+    let allowed_origin = std::env::var("ALLOWED_ORIGIN")
+        .unwrap_or_else(|_| "https://universalconverter-app.heiphaistos.org".into());
 
     let state = Arc::new(AppState {
         conversion_permits: Semaphore::new(MAX_INFLIGHT),
@@ -385,12 +405,43 @@ async fn main() -> anyhow::Result<()> {
             .ok_or_else(|| anyhow!("Config rate-limit invalide"))?,
     );
 
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::exact(
+            allowed_origin.parse::<HeaderValue>()
+                .map_err(|e| anyhow!("ALLOWED_ORIGIN invalide : {e}"))?,
+        ));
+
+    // Security headers appliqués à toutes les réponses
+    let csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'";
+    let sec_headers = tower::ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(csp),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        ));
+
     let api = Router::new()
         .route("/api/convert", post(convert))
         .route("/api/merge-pdf", post(merge_pdf))
         .route("/api/split-pdf", post(split_pdf))
         .route("/api/pdf-page-count", post(pdf_page_count))
         .route("/api/health", get(health))
+        .layer(cors)
         .layer(GovernorLayer { config: governor_conf })
         .layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES))
         .layer(TimeoutLayer::new(Duration::from_secs(120)))
@@ -399,7 +450,7 @@ async fn main() -> anyhow::Result<()> {
     let index = format!("{static_dir}/index.html");
     let static_service = ServeDir::new(&static_dir).fallback(ServeFile::new(&index));
 
-    let app = api.fallback_service(static_service);
+    let app = api.fallback_service(static_service).layer(sec_headers);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("UniversalConverter Web v{VERSION} — écoute sur http://{addr}");

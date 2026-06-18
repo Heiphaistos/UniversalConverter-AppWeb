@@ -25,6 +25,8 @@ interface Props {
   onFilesAdded: (files: FileItem[]) => void;
 }
 
+const MAX_FILE_BYTES = 60 * 1024 * 1024; // 60 MB — cohérent avec DefaultBodyLimit serveur
+
 export function FileUploader({ onFilesAdded }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +36,9 @@ export function FileUploader({ onFilesAdded }: Props) {
     const memory = getDefaultFormats();
 
     const items: FileItem[] = await Promise.all(
-      Array.from(list).map(async (f) => {
+      Array.from(list)
+        .filter((f) => f.size <= MAX_FILE_BYTES) // Rejet préemptif côté client
+        .map(async (f) => {
         const name = f.name;
         const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
         const formats = getAvailableFormats(ext);

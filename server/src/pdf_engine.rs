@@ -323,7 +323,9 @@ fn get_pages_root_id(doc: &Document) -> Result<lopdf::ObjectId> {
 fn renumber_refs(obj: lopdf::Object, offset: u32) -> lopdf::Object {
     use lopdf::Object;
     match obj {
-        Object::Reference(id) => Object::Reference((id.0 + offset, id.1)),
+        // Utilise saturating_add : en cas d'overflow (normalement impossible vu les vérifications
+        // en amont dans merge_pdfs_pages), on sature à u32::MAX plutôt que de paniquer.
+        Object::Reference(id) => Object::Reference((id.0.saturating_add(offset), id.1)),
         Object::Array(arr) => Object::Array(
             arr.into_iter().map(|o| renumber_refs(o, offset)).collect()
         ),
