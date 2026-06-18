@@ -371,8 +371,8 @@ async fn pdf_page_count(multipart: Multipart) -> Result<Response, ApiError> {
 /// ou `C:\Users\...\AppData\Local\Temp\ucw_*` ne doivent pas fuiter.
 fn sanitize_error_message(msg: &str) -> String {
     // Supprimer les chemins absolus (Windows et POSIX)
-    let re_win = regex::Regex::new(r"(?i)[A-Za-z]:[\\\/][^\s,:'\"]+").unwrap();
-    let re_posix = regex::Regex::new(r"/(?:tmp|var|home|usr|opt)/[^\s,:'\"]+").unwrap();
+    let re_win = regex::Regex::new(r#"(?i)[A-Za-z]:[\\\/][^\s,:'"]+"#).unwrap();
+    let re_posix = regex::Regex::new(r#"/(?:tmp|var|home|usr|opt)/[^\s,:'"]+"#).unwrap();
     let cleaned = re_win.replace_all(msg, "<path>");
     let cleaned = re_posix.replace_all(&cleaned, "<path>");
     cleaned.into_owned()
